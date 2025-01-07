@@ -87,6 +87,40 @@ class MouldKingCrypt :
         return telegramArray
 
     @staticmethod
+    def Decrypt(encryptedData: bytes) -> bytes:
+        if len(encryptedData) != 24:
+            raise ValueError("Invalid encrypted data length. Must be 24 bytes.")
+        # find how many bytes at end is sequential, ie how many is filler
+        dataLen = len(encryptedData)
+        sequentialCnt = 1
+        for i in range(dataLen):
+            if encryptedData[dataLen - i - 1] - 1 == encryptedData[dataLen - i - 2]:
+                sequentialCnt += 1
+            else:
+                break
+        # 39-6 = 33 for connect dgrams, 39-4 = 35 for ctrl dgrams
+        # add 15 bytes of value 0x00 to front, must become size of 33
+        step1 = bytearray(39 - sequentialCnt)
+        # collect first 18* bytes from input to use as last 18 bytes, remove last 5 bytes from input, which holds idx+1 only.
+        # *18 must be extended till sequential indexes start coming
+        for i in range(len(encryptedData) - sequentialCnt):
+            step1[15 + i] = encryptedData[i]
+        output1 = MouldKingCrypt.__crypt_array(step1.copy(), MouldKingCrypt.__create_magic_array(37, 7))
+        # collect final bytes (18 -> 33)
+        step2 = output1[18:]
+        output2 = MouldKingCrypt.__crypt_array(step2.copy(), MouldKingCrypt.__create_magic_array(63, 7))
+
+        decryptedData = output2[5:-2]
+        checkSum1 = output2[-1]
+        checkSum2 = output2[-2]
+        verifyChecksum = MouldKingCrypt.__calc_checksum_from_arrays(MouldKingCrypt.__Array_C1C2C3C4C5, decryptedData)
+        if (verifyChecksum & 255) != checkSum2:
+            raise ValueError("Checksum validation failed")
+        if ((verifyChecksum >> 8) & 255) != checkSum1:
+            raise ValueError("Checksum validation failed")
+        return decryptedData
+
+    @staticmethod
     def __create_magic_array(magic_number: int, size: int) -> bytes:
         magic_array = [0] * size
         magic_array[0] = 1
